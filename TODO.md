@@ -15,15 +15,16 @@ Get through these in order and you'll have a working app.
 
 ---
 
-## 2. Terra
+## 2. Health Data (no account needed)
 
-- [ ] Create a developer account at https://tryterra.co
-- [ ] Create an application in the Terra dashboard
-- [ ] Copy **Dev ID** → `TERRA_DEV_ID` / `EXPO_PUBLIC_TERRA_DEV_ID`
-- [ ] Copy **API Key** → `TERRA_API_KEY`
-- [ ] Set webhook URL to `https://your-backend/webhooks/terra`
-- [ ] Copy **Webhook Secret** → `TERRA_WEBHOOK_SECRET`
-- [ ] Subscribe to events: **SLEEP** and **USER_AUTH**
+**iOS:**
+- [ ] Garmin users: Garmin Connect → More → Health & Wellness → enable **Apple Health** sync
+- [ ] The app will request HealthKit permission on first launch — nothing else needed
+
+**Android:**
+- [ ] Install Health Connect if not already present (pre-installed on Android 14+)
+- [ ] Garmin users: Garmin Connect → Settings → Health Snapshot → enable **Health Connect** sync
+- [ ] The app will request Health Connect permission on first launch
 
 ---
 
@@ -33,17 +34,14 @@ Get through these in order and you'll have a working app.
 cp backend/.env.example backend/.env
 ```
 
-Fill in every value:
+Fill in:
 
 ```
 PORT=3000
 SUPABASE_URL=
 SUPABASE_SERVICE_KEY=
-TERRA_API_KEY=
-TERRA_DEV_ID=
-TERRA_WEBHOOK_SECRET=
-MATCH_RESOLUTION_CUTOFF_HOUR=14
-ADMIN_SECRET=           # make something up, you'll use this to create daily matches
+ADMIN_SECRET=           # make something up — used for manual match creation
+MATCH_CRON_SCHEDULE=0 21 * * *  # optional, 9pm ET is the default
 ```
 
 ---
@@ -60,10 +58,7 @@ Fill in:
 EXPO_PUBLIC_SUPABASE_URL=
 EXPO_PUBLIC_SUPABASE_ANON_KEY=
 EXPO_PUBLIC_API_URL=http://YOUR_LAN_IP:3000   # e.g. 192.168.1.x — not localhost
-EXPO_PUBLIC_TERRA_DEV_ID=                     # same Dev ID from step 2
 ```
-
-> **Note:** `EXPO_PUBLIC_TERRA_DEV_ID` isn't in `.env.example` — add it manually.
 
 ---
 
@@ -76,42 +71,51 @@ cd ../mobile && npm install
 
 ---
 
-## 6. Expose the backend publicly (for Terra webhooks)
+## 6. Prebuild the mobile app (one-time)
 
-Terra needs to reach your backend to deliver sleep data. For local dev, use ngrok:
+`react-native-health` is a native module — Expo Go won't work. Run:
 
 ```bash
-# Install ngrok if needed: https://ngrok.com
-ngrok http 3000
-# Copy the https URL (e.g. https://abc123.ngrok.io)
-# Set this as your Terra webhook URL: https://abc123.ngrok.io/webhooks/terra
+cd mobile && npx expo prebuild
 ```
+
+This generates `ios/` and `android/` folders. You only need to do this once (or after adding new native packages).
 
 ---
 
 ## 7. Run it
 
 ```bash
-# Terminal 1
+# Terminal 1 — backend
 cd backend && npm run dev
 
-# Terminal 2
-cd mobile && npx expo start
-# Scan QR with Expo Go on your phone
+# Terminal 2 — mobile (pick your platform)
+cd mobile && npx expo run:ios
+# or
+cd mobile && npx expo run:android
 ```
+
+**Prerequisites:** Xcode installed for iOS, Android Studio for Android.
 
 ---
 
-## 8. Daily match creation
+## 8. How sleep data flows
 
-This now runs automatically at **9pm ET every night** via a `node-cron` job built into the backend. Nothing to configure — just make sure the backend is running.
+No webhooks, no external services. Here's what happens:
 
-To change the time, set `MATCH_CRON_SCHEDULE` in `backend/.env` (uses [crontab syntax](https://crontab.guru), always in `America/New_York`):
+1. User opens the app each morning
+2. App calls HealthKit (iOS) or Health Connect (Android) to pull last night's sleep
+3. App posts the data to `POST /api/sleep/sync` (JWT-authenticated)
+4. Backend scores the sleep, upserts the record, checks if the match can resolve
+5. If both players have synced, match resolves and push notifications go out
 
-```
-MATCH_CRON_SCHEDULE=0 21 * * *   # 9pm ET (default)
-MATCH_CRON_SCHEDULE=0 20 * * *   # 8pm ET
-```
+The sync is idempotent — opening the app multiple times won't create duplicate records.
+
+---
+
+## 9. Daily match creation
+
+Runs automatically at **9pm ET every night** via a built-in cron job. Nothing to configure.
 
 To trigger manually (e.g. for testing):
 
@@ -124,20 +128,20 @@ curl -X POST http://localhost:3000/api/matches/create-daily \
 
 ---
 
-## 9. Onboard friends
+## 10. Onboard friends
 
 For each person:
-1. They sign up in the app with email + password
-2. They tap **Connect Sleep Tracker** and link their device via the Terra widget
-3. Backend receives the `USER_AUTH` webhook and stores their `terra_user_id`
+1. They sign up with email + password
+2. They tap **Connect Apple Health** (or Health Connect) — grants permission
+3. Next morning when they open the app, sleep data syncs automatically
 4. They're in the pool for nightly matches
 
 ---
 
 ## Nice-to-haves (post-PoC)
 
-- [ ] Automate daily match creation with a cron job
-- [ ] Set up a persistent backend host (Railway, Fly.io, Render) so you don't need ngrok
-- [ ] Add match history chart to Profile screen
-- [ ] Handle Terra test webhooks to validate scoring without real sleep data
-- [ ] Push notification deep link into the match result on tap
+- [ ] Add Oura Ring support via their free REST API (user pastes Personal Access Token)
+- [ ] EAS Build setup so you can distribute without Xcode/Android Studio
+- [ ] Set up a persistent backend host (Railway, Fly.io, Render) instead of running locally
+- [ ] Match history chart in Profile screen
+- [ ] Deep link from push notification into match result

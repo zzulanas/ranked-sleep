@@ -10,7 +10,8 @@ import {
 import { useMatch } from '../hooks/useMatch';
 import { MatchCard } from '../components/MatchCard';
 import { RankBadge } from '../components/RankBadge';
-import { getUser, UserProfile } from '../services/api';
+import { getUser, UserProfile, syncSleep, checkSleepExists } from '../services/api';
+import { getLastNightSleep } from '../services/healthData';
 
 interface HomeScreenProps {
   userId: string;
@@ -35,7 +36,24 @@ export function HomeScreen({ userId }: HomeScreenProps) {
 
   useEffect(() => {
     loadUser();
+    syncSleepOnOpen();
   }, [userId]);
+
+  // On every app open, try to pull last night's sleep from the device and post it.
+  // Bails out early if we already have data for that date (idempotent).
+  const syncSleepOnOpen = async () => {
+    try {
+      const sleepData = await getLastNightSleep();
+      if (!sleepData) return;
+      const already = await checkSleepExists(sleepData.date);
+      if (already) return;
+      await syncSleep(sleepData);
+      // Refresh match after sync — scores may have just resolved
+      refresh();
+    } catch (err) {
+      console.log('[home] Sleep sync failed (non-fatal):', err);
+    }
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);

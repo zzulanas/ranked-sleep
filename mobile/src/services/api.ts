@@ -1,12 +1,15 @@
 // Backend API client
+import { getCurrentSession } from './auth';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const session = await getCurrentSession();
   const url = `${API_URL}${path}`;
   const res = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
       ...options?.headers,
     },
     ...options,
@@ -30,9 +33,8 @@ export interface UserProfile {
   elo_rating: number;
   wins: number;
   losses: number;
-  provider: string | null;
-  terra_user_id: string | null;
-  terra_connected: boolean;
+  provider: string | null;  // set after first sleep sync; null = health not yet connected
+  health_connected: boolean;
   tier: string;
   created_at: string;
 }
@@ -121,4 +123,22 @@ export interface LeaderboardEntry {
 export async function getLeaderboard(): Promise<LeaderboardEntry[]> {
   const data = await request<{ leaderboard: LeaderboardEntry[] }>('/api/leaderboard');
   return data.leaderboard;
+}
+
+// ---------------------------------------------------------------------------
+// Sleep sync
+// ---------------------------------------------------------------------------
+
+import { NormalizedSleepData } from './healthData';
+
+export async function syncSleep(data: NormalizedSleepData): Promise<{ score: number; date: string }> {
+  return request<{ success: boolean; score: number; date: string }>('/api/sleep/sync', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function checkSleepExists(date: string): Promise<boolean> {
+  const data = await request<{ exists: boolean }>(`/api/sleep/check/${date}`);
+  return data.exists;
 }

@@ -24,14 +24,19 @@ Compete in nightly 1v1 sleep battles with your friends. Sleep data is pulled fro
 
 ---
 
-## 2. Terra Setup
+## 2. Health Data Setup
 
-1. Create an account at https://tryterra.co
-2. Go to your dashboard and create an application
-3. Copy your **Dev ID** and **API Key**
-4. Set your webhook URL to: `https://your-backend-domain/webhooks/terra`
-5. Copy your **Webhook Secret** from the webhook settings page
-6. Subscribe to: `SLEEP`, `USER_AUTH` webhook events
+Sleep data is pulled directly from the device — no third-party API account needed.
+
+**iOS (Apple Health):**
+- No setup required. The app requests permission on first launch.
+- Garmin users: open Garmin Connect → More → Health & Wellness → enable **Apple Health** sync.
+- Oura, Whoop, and most other trackers sync to Apple Health automatically.
+
+**Android (Health Connect):**
+- Health Connect is pre-installed on Android 14+. On older devices, install it from the Play Store.
+- Garmin users: open Garmin Connect → Settings → Health Snapshot → enable **Health Connect** sync.
+- The app requests permission on first launch.
 
 ---
 
@@ -52,24 +57,30 @@ The backend runs on port 3000 by default.
 PORT=3000
 SUPABASE_URL=...
 SUPABASE_SERVICE_KEY=...
-TERRA_API_KEY=...
-TERRA_DEV_ID=...
-TERRA_WEBHOOK_SECRET=...
-MATCH_RESOLUTION_CUTOFF_HOUR=14    # 2pm ET — matches not resolved by this hour are voided
 ADMIN_SECRET=pick-something-random  # used for the /api/matches/create-daily endpoint
+MATCH_CRON_SCHEDULE=0 21 * * *     # 9pm ET nightly match creation (default)
 ```
 
 ---
 
 ## 4. Mobile Setup
 
+`react-native-health` is a native module that requires a bare Expo workflow (not Expo Go).
+
 ```bash
 cd mobile
 npm install
 cp .env.example .env
 # Fill in Supabase URL + anon key, and your backend URL
-npx expo start
+
+# Generate native ios/ and android/ folders (one-time)
+npx expo prebuild
+
+# Run on device
+npx expo run:ios      # or run:android
 ```
+
+> **Note:** You can't use Expo Go after prebuild. You'll need Xcode (iOS) or Android Studio (Android) installed, or build with EAS Build if you prefer not to set up a local dev environment.
 
 Scan the QR code with Expo Go on your phone.
 

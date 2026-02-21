@@ -33,7 +33,15 @@
           "color": "#6c63ff",
           "sounds": []
         }
-      ]
+      ],
+      [
+        "react-native-health",
+        {
+          "healthSharePermission": "Ranked Sleep reads your sleep data to calculate your nightly score and compete with friends.",
+          "healthUpdatePermission": "Ranked Sleep reads your sleep data to calculate your nightly score."
+        }
+      ],
+      "expo-health-connect"
     ],
     "extra": {
       "eas": {

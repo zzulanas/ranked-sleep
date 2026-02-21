@@ -44,7 +44,8 @@ export default function App() {
     setUserId(id);
     try {
       const { user } = await getUser(id);
-      if (!user.terra_connected) {
+      // Show connect screen until first sleep sync (provider is set after first sync)
+      if (!user.health_connected) {
         setAppState('connect_tracker');
       } else {
         setAppState('ready');
@@ -74,10 +75,7 @@ export default function App() {
   if (appState === 'connect_tracker' && userId) {
     return (
       <SafeAreaProvider>
-        <ConnectTrackerScreen
-          userId={userId}
-          onConnected={() => setAppState('ready')}
-        />
+        <ConnectTrackerScreen onConnected={() => setAppState('ready')} />
       </SafeAreaProvider>
     );
   }
