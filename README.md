@@ -1,5 +1,7 @@
 # Ranked Sleep 🌙
 
+[![GitHub repo](https://img.shields.io/badge/github-ranked--sleep-181717?logo=github)](https://github.com/zzulanas/ranked-sleep)
+
 Compete in nightly 1v1 sleep battles with your friends. Sleep data is pulled from your wearable via the Terra API, scored with a weighted algorithm, and used to determine match winners — with ELO ratings tracking your progress over time.
 
 ## Prerequisites
