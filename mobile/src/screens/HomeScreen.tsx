@@ -11,7 +11,6 @@ import { useMatch } from '../hooks/useMatch';
 import { MatchCard } from '../components/MatchCard';
 import { RankBadge } from '../components/RankBadge';
 import { getUser, UserProfile } from '../services/api';
-import { eloTierFromRating } from '../utils/elo';
 
 interface HomeScreenProps {
   userId: string;
