@@ -1,6 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { getSupabaseClient } from '../db/client';
-import { getTodayNY } from '../services/terra';
+// Get today's date in America/New_York timezone
+function getTodayNY(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
 import { eloTier } from '../services/elo';
 
 export const usersRouter = Router();
@@ -47,7 +53,7 @@ usersRouter.get('/:id', async (req: Request, res: Response) => {
 
   const { data: user, error } = await db
     .from('users')
-    .select('id, username, elo_rating, wins, losses, provider, terra_user_id, created_at')
+    .select('id, username, elo_rating, wins, losses, provider, created_at')
     .eq('id', id)
     .single();
 
@@ -67,7 +73,7 @@ usersRouter.get('/:id', async (req: Request, res: Response) => {
     user: {
       ...user,
       tier: eloTier(user.elo_rating),
-      terra_connected: !!user.terra_user_id,
+      health_connected: !!user.provider,
     },
     today_match: match ?? null,
   });

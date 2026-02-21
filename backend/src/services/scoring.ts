@@ -1,53 +1,13 @@
-import { TerraSleepData, ExtractedSleepFields } from '../types/terra';
+// Sleep scoring service
+// Input comes from the mobile app (pulled from HealthKit / Health Connect)
 
-// ---------------------------------------------------------------------------
-// Field extraction
-// ---------------------------------------------------------------------------
-
-/**
- * Pull all relevant scoring fields out of a Terra sleep payload into a flat object.
- * Terra docs: https://docs.tryterra.co/reference/data-models
- */
-export function extractSleepFields(data: TerraSleepData): ExtractedSleepFields {
-  const dur = data.sleep_durations_data;
-  const hr = data.heart_rate_data;
-  const meta = data.metadata;
-
-  const totalSleepSeconds = dur?.asleep?.duration_asleep_state_seconds ?? null;
-  const deepSleepSeconds = dur?.asleep?.duration_deep_sleep_state_seconds ?? null;
-  const remSleepSeconds = dur?.asleep?.duration_REM_sleep_state_seconds ?? null;
-  const efficiency = dur?.sleep_efficiency ?? null;
-
-  // HRV: Terra's confirmed field paths are heart_rate_data.summary.avg_hrv_rmssd / avg_hrv_sdnn
-  // (per Terra OpenAPI schema — NOT nested under hrv.summary)
-  const hrvAvg =
-    hr?.summary?.avg_hrv_rmssd ??
-    hr?.summary?.avg_hrv_sdnn ??
-    null;
-
-  // Duration: time between bedtime and wake
-  let durationSeconds: number | null = null;
-  if (meta.start_time && meta.end_time) {
-    const start = new Date(meta.start_time).getTime();
-    const end = new Date(meta.end_time).getTime();
-    if (!isNaN(start) && !isNaN(end) && end > start) {
-      durationSeconds = Math.round((end - start) / 1000);
-    }
-  }
-
-  // Prefer explicit asleep duration if available (more accurate than total time in bed)
-  const finalDuration = totalSleepSeconds ?? durationSeconds;
-
-  return {
-    durationSeconds: finalDuration,
-    efficiency,
-    deepSleepSeconds,
-    remSleepSeconds,
-    totalSleepSeconds,
-    hrvAvg,
-    bedtime: meta.start_time ?? null,
-    wakeTime: meta.end_time ?? null,
-  };
+export interface SleepInput {
+  duration_seconds: number | null;
+  efficiency: number | null;         // 0.0 - 1.0 (asleep / in-bed)
+  deep_sleep_seconds: number | null;
+  rem_sleep_seconds: number | null;
+  hrv_avg: number | null;            // milliseconds
+  total_sleep_seconds: number | null; // same as duration_seconds; used for stage % calcs
 }
 
 // ---------------------------------------------------------------------------
@@ -67,7 +27,7 @@ function scoreDuration(seconds: number): number {
     return 100 - (hours - 8.5) * 20;
   }
   if (hours > 9) {
-    // Diminishing returns beyond 9h; drop to 60 at 11h
+    // Diminishing returns beyond 9h; floor at 60 around 11h
     return Math.max(60, 90 - (hours - 9) * 15);
   }
   if (hours >= 6 && hours < 7) {
@@ -79,30 +39,27 @@ function scoreDuration(seconds: number): number {
 }
 
 function scoreEfficiency(efficiency: number): number {
-  // Terra returns efficiency as 0-100 (e.g. 87.5), not 0-1
-  return Math.min(100, Math.max(0, efficiency));
+  // efficiency is 0.0–1.0; convert to 0–100 and cap
+  return Math.min(100, Math.max(0, efficiency * 100));
 }
 
 function scoreDeepSleep(deepSeconds: number, totalSleepSeconds: number): number {
   if (totalSleepSeconds <= 0) return 0;
   const pct = deepSeconds / totalSleepSeconds;
   // Target: 20% deep sleep = 100pts; scale proportionally
-  const score = (pct / 0.20) * 100;
-  return Math.min(100, Math.max(0, score));
+  return Math.min(100, Math.max(0, (pct / 0.20) * 100));
 }
 
 function scoreREM(remSeconds: number, totalSleepSeconds: number): number {
   if (totalSleepSeconds <= 0) return 0;
   const pct = remSeconds / totalSleepSeconds;
   // Target: 25% REM = 100pts; scale proportionally
-  const score = (pct / 0.25) * 100;
-  return Math.min(100, Math.max(0, score));
+  return Math.min(100, Math.max(0, (pct / 0.25) * 100));
 }
 
 function scoreHRV(hrv: number): number {
   // Range: 20ms = 0pts, 80ms = 100pts; clamp outside bounds
-  const score = ((hrv - 20) / (80 - 20)) * 100;
-  return Math.min(100, Math.max(0, score));
+  return Math.min(100, Math.max(0, ((hrv - 20) / (80 - 20)) * 100));
 }
 
 // ---------------------------------------------------------------------------
@@ -116,63 +73,58 @@ interface ScoringComponent {
 }
 
 /**
- * Calculate a 0–100 sleep score from extracted fields.
+ * Calculate a 0–100 sleep score from a flat SleepInput.
  * Gracefully degrades: missing fields are excluded and weights are renormalized.
  */
-export function calculateSleepScore(fields: ExtractedSleepFields): number {
+export function calculateSleepScore(data: SleepInput): number {
   const baseWeights = {
-    duration: 0.35,
+    duration:   0.35,
     efficiency: 0.25,
-    deep: 0.20,
-    rem: 0.15,
-    hrv: 0.05,
+    deep:       0.20,
+    rem:        0.15,
+    hrv:        0.05,
   };
 
   const components: ScoringComponent[] = [];
 
-  // Duration
-  if (fields.durationSeconds !== null) {
+  if (data.duration_seconds !== null) {
     components.push({
       name: 'duration',
-      score: scoreDuration(fields.durationSeconds),
+      score: scoreDuration(data.duration_seconds),
       weight: baseWeights.duration,
     });
   }
 
-  // Efficiency
-  if (fields.efficiency !== null) {
+  if (data.efficiency !== null) {
     components.push({
       name: 'efficiency',
-      score: scoreEfficiency(fields.efficiency),
+      score: scoreEfficiency(data.efficiency),
       weight: baseWeights.efficiency,
     });
   }
 
-  // Deep sleep (requires total sleep for percentage)
-  const totalForDeep = fields.totalSleepSeconds ?? fields.durationSeconds;
-  if (fields.deepSleepSeconds !== null && totalForDeep !== null && totalForDeep > 0) {
+  const totalForStages = data.total_sleep_seconds ?? data.duration_seconds;
+
+  if (data.deep_sleep_seconds !== null && totalForStages !== null && totalForStages > 0) {
     components.push({
       name: 'deep_sleep',
-      score: scoreDeepSleep(fields.deepSleepSeconds, totalForDeep),
+      score: scoreDeepSleep(data.deep_sleep_seconds, totalForStages),
       weight: baseWeights.deep,
     });
   }
 
-  // REM sleep
-  const totalForREM = fields.totalSleepSeconds ?? fields.durationSeconds;
-  if (fields.remSleepSeconds !== null && totalForREM !== null && totalForREM > 0) {
+  if (data.rem_sleep_seconds !== null && totalForStages !== null && totalForStages > 0) {
     components.push({
       name: 'rem_sleep',
-      score: scoreREM(fields.remSleepSeconds, totalForREM),
+      score: scoreREM(data.rem_sleep_seconds, totalForStages),
       weight: baseWeights.rem,
     });
   }
 
-  // HRV
-  if (fields.hrvAvg !== null) {
+  if (data.hrv_avg !== null) {
     components.push({
       name: 'hrv',
-      score: scoreHRV(fields.hrvAvg),
+      score: scoreHRV(data.hrv_avg),
       weight: baseWeights.hrv,
     });
   }
@@ -185,12 +137,11 @@ export function calculateSleepScore(fields: ExtractedSleepFields): number {
   // Renormalize weights to sum to 1.0
   const totalWeight = components.reduce((sum, c) => sum + c.weight, 0);
   const finalScore = components.reduce((sum, c) => {
-    const normalizedWeight = c.weight / totalWeight;
-    return sum + c.score * normalizedWeight;
+    return sum + c.score * (c.weight / totalWeight);
   }, 0);
 
   console.log('[scoring] Components:', components.map(c => `${c.name}=${c.score.toFixed(1)}`).join(', '));
-  console.log(`[scoring] Final score: ${finalScore.toFixed(2)} (${components.length} components, total weight ${totalWeight.toFixed(2)})`);
+  console.log(`[scoring] Final score: ${finalScore.toFixed(2)} (${components.length} components)`);
 
   return parseFloat(finalScore.toFixed(2));
 }

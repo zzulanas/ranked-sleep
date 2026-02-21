@@ -1,7 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { getSupabaseClient } from '../db/client';
 import { createDailyMatches } from '../services/matching';
-import { getTodayNY } from '../services/terra';
+function getTodayNY(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
 
 export const matchesRouter = Router();
 

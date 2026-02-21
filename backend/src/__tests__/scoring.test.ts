@@ -1,145 +1,94 @@
-import { calculateSleepScore, extractSleepFields } from '../services/scoring';
-import { ExtractedSleepFields, TerraSleepData } from '../types/terra';
+import { calculateSleepScore, SleepInput } from '../services/scoring';
 
-const fullFields: ExtractedSleepFields = {
-  durationSeconds: 8 * 3600,        // 8 hours
-  efficiency: 90,                    // 90 (Terra's 0-100 scale)
-  deepSleepSeconds: 1.6 * 3600,     // 20% of 8h
-  remSleepSeconds: 2 * 3600,        // 25% of 8h
-  totalSleepSeconds: 8 * 3600,
-  hrvAvg: 50,                        // 50ms — middle of 20-80 range
-  bedtime: '2024-01-15T23:00:00Z',
-  wakeTime: '2024-01-16T07:00:00Z',
+const fullInput: SleepInput = {
+  duration_seconds: 8 * 3600,        // 8 hours
+  efficiency: 0.90,                   // 90% (0.0–1.0 scale)
+  deep_sleep_seconds: 1.6 * 3600,    // 20% of 8h
+  rem_sleep_seconds: 2 * 3600,       // 25% of 8h
+  total_sleep_seconds: 8 * 3600,
+  hrv_avg: 50,                        // 50ms — middle of 20–80 range
 };
 
 describe('calculateSleepScore', () => {
   it('returns a high score for optimal sleep', () => {
-    const score = calculateSleepScore(fullFields);
+    const score = calculateSleepScore(fullInput);
     expect(score).toBeGreaterThanOrEqual(80);
     expect(score).toBeLessThanOrEqual(100);
   });
 
-  it('returns a score between 0 and 100', () => {
-    const badFields: ExtractedSleepFields = {
-      ...fullFields,
-      durationSeconds: 4 * 3600, // 4 hours — very bad
-      efficiency: 50,            // 50 on Terra's 0-100 scale
-      deepSleepSeconds: 0,
-      remSleepSeconds: 0,
-      hrvAvg: 15,
+  it('returns a score between 0 and 100 for terrible sleep', () => {
+    const badInput: SleepInput = {
+      ...fullInput,
+      duration_seconds: 4 * 3600,
+      efficiency: 0.50,
+      deep_sleep_seconds: 0,
+      rem_sleep_seconds: 0,
+      hrv_avg: 15,
     };
-    const score = calculateSleepScore(badFields);
+    const score = calculateSleepScore(badInput);
     expect(score).toBeGreaterThanOrEqual(0);
     expect(score).toBeLessThanOrEqual(100);
   });
 
   it('handles missing fields gracefully by renormalizing weights', () => {
-    const partialFields: ExtractedSleepFields = {
-      durationSeconds: 8 * 3600,
+    const partialInput: SleepInput = {
+      duration_seconds: 8 * 3600,
       efficiency: null,
-      deepSleepSeconds: null,
-      remSleepSeconds: null,
-      totalSleepSeconds: null,
-      hrvAvg: null,
-      bedtime: null,
-      wakeTime: null,
+      deep_sleep_seconds: null,
+      rem_sleep_seconds: null,
+      total_sleep_seconds: null,
+      hrv_avg: null,
     };
-    const score = calculateSleepScore(partialFields);
+    const score = calculateSleepScore(partialInput);
     expect(score).toBeGreaterThan(0);
     expect(score).toBeLessThanOrEqual(100);
   });
 
   it('returns 0 when no fields are available', () => {
-    const emptyFields: ExtractedSleepFields = {
-      durationSeconds: null,
+    const emptyInput: SleepInput = {
+      duration_seconds: null,
       efficiency: null,
-      deepSleepSeconds: null,
-      remSleepSeconds: null,
-      totalSleepSeconds: null,
-      hrvAvg: null,
-      bedtime: null,
-      wakeTime: null,
+      deep_sleep_seconds: null,
+      rem_sleep_seconds: null,
+      total_sleep_seconds: null,
+      hrv_avg: null,
     };
-    const score = calculateSleepScore(emptyFields);
-    expect(score).toBe(0);
+    expect(calculateSleepScore(emptyInput)).toBe(0);
   });
 
   it('scores 8h duration near 100', () => {
-    const score = calculateSleepScore({ ...fullFields, durationSeconds: 8 * 3600 });
+    const score = calculateSleepScore({ ...fullInput, duration_seconds: 8 * 3600 });
     expect(score).toBeGreaterThanOrEqual(85);
   });
 
   it('scores 6h duration lower than 8h', () => {
-    const score6h = calculateSleepScore({ ...fullFields, durationSeconds: 6 * 3600 });
-    const score8h = calculateSleepScore({ ...fullFields, durationSeconds: 8 * 3600 });
+    const score6h = calculateSleepScore({ ...fullInput, duration_seconds: 6 * 3600 });
+    const score8h = calculateSleepScore({ ...fullInput, duration_seconds: 8 * 3600 });
     expect(score6h).toBeLessThan(score8h);
   });
 
+  it('scores high efficiency higher than low efficiency', () => {
+    const high = calculateSleepScore({ ...fullInput, efficiency: 0.95 });
+    const low  = calculateSleepScore({ ...fullInput, efficiency: 0.60 });
+    expect(high).toBeGreaterThan(low);
+  });
+
   it('penalizes very low HRV', () => {
-    const highHRV = calculateSleepScore({ ...fullFields, hrvAvg: 80 });
-    const lowHRV = calculateSleepScore({ ...fullFields, hrvAvg: 20 });
+    const highHRV = calculateSleepScore({ ...fullInput, hrv_avg: 80 });
+    const lowHRV  = calculateSleepScore({ ...fullInput, hrv_avg: 20 });
     expect(highHRV).toBeGreaterThan(lowHRV);
   });
-});
 
-describe('extractSleepFields', () => {
-  it('extracts all fields from a complete Terra payload', () => {
-    // Uses Terra's confirmed OpenAPI field paths
-    const payload: TerraSleepData = {
-      metadata: {
-        start_time: '2024-01-15T23:00:00Z',
-        end_time: '2024-01-16T07:00:00Z',
-      },
-      sleep_durations_data: {
-        sleep_efficiency: 88,   // Terra: 0-100 scale
-        asleep: {
-          duration_asleep_state_seconds: 7 * 3600,
-          duration_deep_sleep_state_seconds: 1.4 * 3600,
-          duration_REM_sleep_state_seconds: 1.75 * 3600,
-        },
-      },
-      heart_rate_data: {
-        // HRV is in summary, not nested under hrv.summary
-        summary: {
-          avg_hrv_rmssd: 45,
-        },
-      },
-    };
-
-    const fields = extractSleepFields(payload);
-    expect(fields.efficiency).toBeCloseTo(88);   // returned as-is (0-100)
-    expect(fields.deepSleepSeconds).toBe(1.4 * 3600);
-    expect(fields.remSleepSeconds).toBe(1.75 * 3600);
-    expect(fields.totalSleepSeconds).toBe(7 * 3600);
-    expect(fields.hrvAvg).toBe(45);
-    expect(fields.bedtime).toBe('2024-01-15T23:00:00Z');
-    expect(fields.wakeTime).toBe('2024-01-16T07:00:00Z');
-  });
-
-  it('computes duration from metadata times when asleep duration is missing', () => {
-    const payload: TerraSleepData = {
-      metadata: {
-        start_time: '2024-01-15T22:00:00Z',
-        end_time: '2024-01-16T06:00:00Z',
-      },
-    };
-
-    const fields = extractSleepFields(payload);
-    expect(fields.durationSeconds).toBe(8 * 3600);
-  });
-
-  it('returns nulls for missing fields', () => {
-    const payload: TerraSleepData = {
-      metadata: {
-        start_time: '2024-01-15T23:00:00Z',
-        end_time: '2024-01-16T07:00:00Z',
-      },
-    };
-
-    const fields = extractSleepFields(payload);
-    expect(fields.efficiency).toBeNull();
-    expect(fields.deepSleepSeconds).toBeNull();
-    expect(fields.remSleepSeconds).toBeNull();
-    expect(fields.hrvAvg).toBeNull();
+  it('uses total_sleep_seconds for deep/REM stage percentages', () => {
+    // 8h total, 20% deep = 100 deep pts
+    const score = calculateSleepScore({
+      duration_seconds: 8 * 3600,
+      efficiency: null,
+      deep_sleep_seconds: 1.6 * 3600,
+      rem_sleep_seconds: null,
+      total_sleep_seconds: 8 * 3600,
+      hrv_avg: null,
+    });
+    expect(score).toBeGreaterThan(0);
   });
 });

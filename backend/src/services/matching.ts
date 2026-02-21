@@ -1,11 +1,17 @@
 import { getSupabaseClient } from '../db/client';
-import { calculateSleepScore, extractSleepFields } from './scoring';
+import { calculateSleepScore, SleepInput } from './scoring';
 import { calculateElo } from './elo';
-import { getCurrentHourNY } from './terra';
-import { TerraSleepData } from '../types/terra';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
-const TIMEZONE = 'America/New_York';
+
+function getCurrentHourNY(): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    hour12: false,
+  }).formatToParts(new Date());
+  return parseInt(parts.find(p => p.type === 'hour')?.value ?? '0', 10);
+}
 
 // ---------------------------------------------------------------------------
 // Match creation
@@ -119,16 +125,25 @@ export async function resolveMatch(matchId: string): Promise<void> {
     return;
   }
 
-  // Use stored scores if available, otherwise calculate from raw payload
+  // Use stored scores; recalculate from flat fields if somehow missing
   let scoreA: number = recordA.score;
   let scoreB: number = recordB.score;
 
-  if (scoreA == null && recordA.raw_payload) {
-    scoreA = calculateSleepScore(extractSleepFields(recordA.raw_payload as TerraSleepData));
+  const toSleepInput = (r: Record<string, unknown>): SleepInput => ({
+    duration_seconds: r.duration_seconds as number | null,
+    efficiency: r.efficiency as number | null,
+    deep_sleep_seconds: r.deep_sleep_seconds as number | null,
+    rem_sleep_seconds: r.rem_sleep_seconds as number | null,
+    hrv_avg: r.hrv_avg as number | null,
+    total_sleep_seconds: r.duration_seconds as number | null,
+  });
+
+  if (scoreA == null) {
+    scoreA = calculateSleepScore(toSleepInput(recordA));
     await db.from('sleep_records').update({ score: scoreA }).eq('id', recordA.id);
   }
-  if (scoreB == null && recordB.raw_payload) {
-    scoreB = calculateSleepScore(extractSleepFields(recordB.raw_payload as TerraSleepData));
+  if (scoreB == null) {
+    scoreB = calculateSleepScore(toSleepInput(recordB));
     await db.from('sleep_records').update({ score: scoreB }).eq('id', recordB.id);
   }
 
