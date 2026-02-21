@@ -102,9 +102,18 @@ cd mobile && npx expo start
 
 ---
 
-## 8. Create daily matches (every evening)
+## 8. Daily match creation
 
-Run this once per night before people go to sleep:
+This now runs automatically at **9pm ET every night** via a `node-cron` job built into the backend. Nothing to configure — just make sure the backend is running.
+
+To change the time, set `MATCH_CRON_SCHEDULE` in `backend/.env` (uses [crontab syntax](https://crontab.guru), always in `America/New_York`):
+
+```
+MATCH_CRON_SCHEDULE=0 21 * * *   # 9pm ET (default)
+MATCH_CRON_SCHEDULE=0 20 * * *   # 8pm ET
+```
+
+To trigger manually (e.g. for testing):
 
 ```bash
 curl -X POST http://localhost:3000/api/matches/create-daily \
@@ -112,8 +121,6 @@ curl -X POST http://localhost:3000/api/matches/create-daily \
   -H "x-admin-secret: YOUR_ADMIN_SECRET" \
   -d "{\"date\": \"$(date +%Y-%m-%d)\"}"
 ```
-
-Save that as a shell alias or stick it in a cron job at ~9pm when you're ready.
 
 ---
 
