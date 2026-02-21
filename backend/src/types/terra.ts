@@ -8,7 +8,7 @@ export interface TerraUser {
 }
 
 export interface TerraSleepDurationsData {
-  sleep_efficiency?: number; // 0.0 - 1.0
+  sleep_efficiency?: number; // 0-100 (percentage), per Terra OpenAPI schema
   asleep?: {
     duration_asleep_state_seconds?: number;
     num_REM_events?: number;
@@ -26,6 +26,10 @@ export interface TerraSleepDurationsData {
     num_out_of_bed_events?: number;
     sleep_latency_seconds?: number;
   };
+  other?: {
+    duration_in_bed_seconds?: number;
+    duration_unmeasurable_sleep_seconds?: number;
+  };
   hypnogram_samples?: Array<{
     level: number;
     timestamp: string;
@@ -33,30 +37,18 @@ export interface TerraSleepDurationsData {
 }
 
 export interface TerraHeartRateData {
+  // Terra's confirmed schema: HRV lives directly in summary, not nested under hrv.*
   summary?: {
     avg_hr_bpm?: number;
     min_hr_bpm?: number;
     max_hr_bpm?: number;
-    avg_hrv_rmssd?: number;  // HRV - root mean square of successive differences
-    avg_hrv_sdnn?: number;   // HRV - standard deviation of NN intervals
+    avg_hrv_rmssd?: number;  // primary HRV field (RMSSD method)
+    avg_hrv_sdnn?: number;   // secondary HRV field (SDNN method)
   };
-  hr_samples?: Array<{
-    bpm: number;
-    timestamp: string;
-  }>;
-  hrv?: {
-    summary?: {
-      avg_sdnn?: number;
-      avg_rmssd?: number;
-    };
-    rmssd_samples?: Array<{
-      hrv: number;
-      timestamp: string;
-    }>;
-    sdnn_samples?: Array<{
-      hrv: number;
-      timestamp: string;
-    }>;
+  detailed?: {
+    hrv_samples_rmssd?: Array<{ timestamp: string; hrv: number }>;
+    hrv_samples_sdnn?: Array<{ timestamp: string; hrv: number }>;
+    hr_samples?: Array<{ timestamp: string; bpm: number }>;
   };
 }
 
@@ -90,7 +82,7 @@ export interface TerraWebhookPayload {
 // Extracted flat sleep fields for scoring
 export interface ExtractedSleepFields {
   durationSeconds: number | null;
-  efficiency: number | null;         // 0.0 - 1.0
+  efficiency: number | null;         // 0-100 (Terra's native scale)
   deepSleepSeconds: number | null;
   remSleepSeconds: number | null;
   totalSleepSeconds: number | null;  // for calculating percentages

@@ -18,10 +18,9 @@ export function extractSleepFields(data: TerraSleepData): ExtractedSleepFields {
   const remSleepSeconds = dur?.asleep?.duration_REM_sleep_state_seconds ?? null;
   const efficiency = dur?.sleep_efficiency ?? null;
 
-  // HRV: prefer RMSSD average, fall back to SDNN, then heart_rate_data summary hrv
+  // HRV: Terra's confirmed field paths are heart_rate_data.summary.avg_hrv_rmssd / avg_hrv_sdnn
+  // (per Terra OpenAPI schema — NOT nested under hrv.summary)
   const hrvAvg =
-    hr?.hrv?.summary?.avg_rmssd ??
-    hr?.hrv?.summary?.avg_sdnn ??
     hr?.summary?.avg_hrv_rmssd ??
     hr?.summary?.avg_hrv_sdnn ??
     null;
@@ -80,8 +79,8 @@ function scoreDuration(seconds: number): number {
 }
 
 function scoreEfficiency(efficiency: number): number {
-  // efficiency is 0.0–1.0; convert to 0–100 and cap
-  return Math.min(100, Math.max(0, efficiency * 100));
+  // Terra returns efficiency as 0-100 (e.g. 87.5), not 0-1
+  return Math.min(100, Math.max(0, efficiency));
 }
 
 function scoreDeepSleep(deepSeconds: number, totalSleepSeconds: number): number {

@@ -3,7 +3,7 @@ import { ExtractedSleepFields, TerraSleepData } from '../types/terra';
 
 const fullFields: ExtractedSleepFields = {
   durationSeconds: 8 * 3600,        // 8 hours
-  efficiency: 0.90,                  // 90%
+  efficiency: 90,                    // 90 (Terra's 0-100 scale)
   deepSleepSeconds: 1.6 * 3600,     // 20% of 8h
   remSleepSeconds: 2 * 3600,        // 25% of 8h
   totalSleepSeconds: 8 * 3600,
@@ -23,7 +23,7 @@ describe('calculateSleepScore', () => {
     const badFields: ExtractedSleepFields = {
       ...fullFields,
       durationSeconds: 4 * 3600, // 4 hours — very bad
-      efficiency: 0.50,
+      efficiency: 50,            // 50 on Terra's 0-100 scale
       deepSleepSeconds: 0,
       remSleepSeconds: 0,
       hrvAvg: 15,
@@ -84,13 +84,14 @@ describe('calculateSleepScore', () => {
 
 describe('extractSleepFields', () => {
   it('extracts all fields from a complete Terra payload', () => {
+    // Uses Terra's confirmed OpenAPI field paths
     const payload: TerraSleepData = {
       metadata: {
         start_time: '2024-01-15T23:00:00Z',
         end_time: '2024-01-16T07:00:00Z',
       },
       sleep_durations_data: {
-        sleep_efficiency: 0.88,
+        sleep_efficiency: 88,   // Terra: 0-100 scale
         asleep: {
           duration_asleep_state_seconds: 7 * 3600,
           duration_deep_sleep_state_seconds: 1.4 * 3600,
@@ -98,16 +99,15 @@ describe('extractSleepFields', () => {
         },
       },
       heart_rate_data: {
-        hrv: {
-          summary: {
-            avg_rmssd: 45,
-          },
+        // HRV is in summary, not nested under hrv.summary
+        summary: {
+          avg_hrv_rmssd: 45,
         },
       },
     };
 
     const fields = extractSleepFields(payload);
-    expect(fields.efficiency).toBeCloseTo(0.88);
+    expect(fields.efficiency).toBeCloseTo(88);   // returned as-is (0-100)
     expect(fields.deepSleepSeconds).toBe(1.4 * 3600);
     expect(fields.remSleepSeconds).toBe(1.75 * 3600);
     expect(fields.totalSleepSeconds).toBe(7 * 3600);
